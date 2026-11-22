@@ -54,3 +54,4 @@ a password on the command line.
 
 Before any task, read `docs/SPEC.md` and follow its "Rules for the agent".
 Build only the screens the developer asks for in each session.
+For all UI, use the tokens and component rules in `docs/DESIGN.md`. Don't add new colors or radii.
