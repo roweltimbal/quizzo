@@ -26,6 +26,7 @@ lineage for that release; use ordinary Git to decide what should be committed
 and pushed. For parallel DeepSpace-source work: `workspace new -t "<task>"` →
 commit → `workspace sync` → `workspace land`. Use `status`, `activity`,
 `releases`, and `rollback` to recover context and inspect what is live.
+The developer also keeps a GitHub remote (`origin`) for the hiring submission. Don't remove or change it. The developer handles `git push origin`.
 
 ## Project commands
 
