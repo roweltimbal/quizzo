@@ -49,3 +49,8 @@ reuses the current CLI login and requires no separate connection. If it reports
 headless shell without an action, run `npx deepspace auth login --help` and use
 the operator-supplied credential path it names; never invent credentials or put
 a password on the command line.
+
+## Project spec
+
+Before any task, read `docs/SPEC.md` and follow its "Rules for the agent".
+Build only the screens the developer asks for in each session.
