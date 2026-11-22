@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <!--
-  Active theme is set on the <html> element below.
-  To switch themes, change `data-theme` to any id defined in src/themes.ts.
-  Color values per theme live in src/themes.css.
+  Active theme is set on the <html> element below (ids in src/themes.ts).
+  Token values live in src/styles.css, from docs/DESIGN.md.
 -->
-<html lang="en" data-theme="slate">
+<html lang="en" data-theme="quizzo">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.ico" />
     <title>quizzo</title>
+    <!-- Plus Jakarta Sans, weights 400–800 (docs/DESIGN.md) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400..800&display=swap"
+    />
     <!--
-      First-paint background, keyed to the data-theme attribute above.
-      Without this the browser paints white until the CSS bundle arrives —
-      a hard flash on the dark themes. Each value mirrors --color-background
-      in src/styles.css (slate) / src/themes.css; keep them in sync when
-      adding or editing themes.
+      First-paint background so the frame before the CSS bundle arrives
+      matches. Mirrors --canvas in src/styles.css; keep them in sync.
     -->
     <style>
-      html { background-color: #0a0a0a; color-scheme: dark; }
-      html[data-theme="paper"] { background-color: #ffffff; color-scheme: light; }
-      /* Add one line per theme you create, mirroring its --color-background. */
+      html { background-color: #F6F4FB; color-scheme: light; }
     </style>
   </head>
   <body>
