@@ -6,9 +6,7 @@
  */
 
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { Book } from '../schemas/books-schema'
-
-export type OutlineEntry = Book['outline'][number]
+import { cleanOutline, isJunkTitle, type OutlineEntry } from './outline'
 
 export interface PdfSummary {
   pageCount: number
@@ -89,12 +87,12 @@ type RawOutlineItem = Awaited<ReturnType<PDFDocumentProxy['getOutline']>>[number
  * Top-level outline entries with their start page. A single root entry
  * (often the book's own title) is unwrapped to its children.
  *
- * Entries whose title starts with "_" are dropped (Word's hidden bookmarks
- * such as "_GoBack" / "_Toc…", not real chapters). The outline counts as
- * missing (returns []) when fewer than 2 entries remain.
+ * Junk bookmarks are dropped before the unwrap, so a stray "_GoBack" beside
+ * the root doesn't block it; cleanOutline() then applies the full rule
+ * (see src/lib/outline.ts) and returns [] when there's no usable outline.
  */
 async function readOutline(pdf: PDFDocumentProxy): Promise<OutlineEntry[]> {
-  const isRealEntry = (item: RawOutlineItem) => !item.title.trim().startsWith('_')
+  const isRealEntry = (item: RawOutlineItem) => !isJunkTitle(item.title)
 
   let items = ((await pdf.getOutline().catch(() => null)) ?? []).filter(isRealEntry)
   if (items.length === 1 && items[0].items?.length) {
@@ -108,7 +106,7 @@ async function readOutline(pdf: PDFDocumentProxy): Promise<OutlineEntry[]> {
     if (title && startPage !== null) entries.push({ title, startPage })
   }
 
-  return entries.length < 2 ? [] : entries
+  return cleanOutline(entries)
 }
 
 /** 1-based page number for an outline destination, or null. */
