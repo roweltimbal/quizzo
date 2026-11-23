@@ -110,7 +110,7 @@ The quiz-taker would see the answers. Quality control instead comes from: Zod sc
 
 ## Data model (records)
 
-**Scope:** one app-wide record scope, `<RecordScope roomId="app:quizzo">`. All collections live in that one Durable Object. (Per-game scopes are a "next" item, not MVP.)
+**Scope:** one app-wide record scope, `<RecordScope roomId={SCOPE_ID}>`, where `SCOPE_ID` is `app:<DEEPSPACE_APP_ID>` (see `src/constants.ts`; the app ID comes from `wrangler.toml`, so each environment gets its own scope). Don't hard-code `app:quizzo`. All collections live in that one Durable Object. (Per-game scopes are a "next" item, not MVP.)
 
 **Users:** handled by DeepSpace auth. No `users` collection; store the auth user ID as `ownerId` / `userId`.
 

@@ -1,0 +1,70 @@
+/**
+ * Screen 2 — Home (docs/SPEC.md): the signed-in user's books.
+ *
+ * The books collection is owner-only (src/schemas/books-schema.ts), so the
+ * server already drops other users' books before they reach this query;
+ * the `where` just states the intent.
+ *
+ * Not built yet: /upload (Screen 3) and /books/:id (Screen 4, Pick chapter).
+ */
+
+import { Link } from 'react-router-dom'
+import { useAuth, useQuery } from 'deepspace'
+import type { Book } from '../../../schemas/books-schema'
+import { bookTints, card, primaryButton } from '../../../lib/styles'
+
+export default function HomePage() {
+  const { userId } = useAuth()
+  const { records, status, error } = useQuery<Book>('books', {
+    where: { ownerId: userId ?? '' },
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+  })
+
+  return (
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
+      <header className="flex items-center justify-between gap-4">
+        <h1 className="text-title text-ink">My books</h1>
+        <Link to="/upload" className={primaryButton}>
+          Upload book
+        </Link>
+      </header>
+
+      <section aria-label="My books" className="mt-6">
+        {status === 'loading' ? (
+          <p className="text-body text-ink-muted" aria-busy="true">
+            Loading your books…
+          </p>
+        ) : status === 'error' ? (
+          <div className={`${card} p-6`} role="alert">
+            <p className="text-heading text-ink">Couldn&apos;t load your books.</p>
+            <p className="mt-1 text-body text-ink-muted">{error ?? 'Try reloading the page.'}</p>
+          </div>
+        ) : records.length === 0 ? (
+          <div data-testid="books-empty" className={`${card} p-6 text-center`}>
+            <p className="text-heading text-ink">No books yet</p>
+            <p className="mt-1 text-body text-ink-muted">
+              Upload a PDF to turn one of its chapters into a quiz.
+            </p>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {records.map((book, i) => (
+              <li key={book.recordId}>
+                <Link
+                  to={`/books/${book.recordId}`}
+                  className={`${bookTints[i % bookTints.length]} focus-ring block rounded-lg p-4 shadow-card`}
+                >
+                  <p className="text-heading text-ink">{book.data.title}</p>
+                  <p className="mt-1 text-caption text-ink-muted">
+                    {book.data.pageCount} {book.data.pageCount === 1 ? 'page' : 'pages'}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  )
+}

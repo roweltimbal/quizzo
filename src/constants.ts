@@ -1,5 +1,9 @@
-/** App name — replaced by the CLI during scaffolding */
-export const APP_NAME = 'quizzo'
+/** Display name. The worker's APP_NAME (wrangler.toml) stays `quizzo`. */
+export const APP_NAME = 'Quizzo'
+
+/** One-line pitch from docs/SPEC.md. */
+export const APP_PITCH =
+  'Turn any book chapter into a quiz, play it solo or live with friends, and get AI grading + feedback.'
 
 /** Immutable app identity — data scope keys to this, so renames never
  *  strand your records.
