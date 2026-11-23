@@ -23,20 +23,38 @@ export class PdfReadError extends Error {}
 
 let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null
 
+/**
+ * The worker is imported with `?worker`, so Vite bundles it as a regular
+ * `.js` worker chunk. Pointing pdf.js at the raw `pdf.worker.min.mjs` file
+ * (`?url` + workerSrc) broke in production: the static host serves `.mjs`
+ * as `application/octet-stream`, and browsers refuse to start a module
+ * worker without a JavaScript content type. One worker is shared by every
+ * document opened in the session.
+ */
 function loadPdfjs() {
   pdfjsPromise ??= Promise.all([
     import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
-  ]).then(([pdfjs, worker]) => {
-    pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+    import('pdfjs-dist/build/pdf.worker.min.mjs?worker'),
+  ]).then(([pdfjs, { default: PdfWorker }]) => {
+    pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker()
     return pdfjs
+  })
+  pdfjsPromise.catch(() => {
+    pdfjsPromise = null // let the next attempt retry instead of caching the failure
   })
   return pdfjsPromise
 }
 
 /** Open a PDF from its bytes. Caller must call `pdf.loadingTask.destroy()` when done. */
 export async function openPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
-  const pdfjs = await loadPdfjs()
+  let pdfjs: typeof import('pdfjs-dist')
+  try {
+    pdfjs = await loadPdfjs()
+  } catch (err) {
+    console.error('[pdf] Failed to load pdf.js', err)
+    throw new PdfReadError("Couldn't load the PDF reader. Reload the page and try again.")
+  }
+
   try {
     // pdf.js takes ownership of (detaches) the buffer it gets, so pass a copy.
     return await pdfjs.getDocument({ data: new Uint8Array(data.slice(0)) }).promise
@@ -44,7 +62,13 @@ export async function openPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
     if (err instanceof pdfjs.PasswordException) {
       throw new PdfReadError('This PDF is password protected.')
     }
-    throw new PdfReadError("This file isn't a readable PDF.")
+    if (err instanceof pdfjs.InvalidPDFException) {
+      throw new PdfReadError("This file isn't a readable PDF.")
+    }
+    // Anything else (worker failed to start, out of memory, …) is not the
+    // file's fault — log the real cause and don't blame the PDF.
+    console.error('[pdf] Failed to open PDF', err)
+    throw new PdfReadError("Couldn't read this PDF. Reload the page and try again.")
   }
 }
 
