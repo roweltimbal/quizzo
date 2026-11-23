@@ -48,9 +48,12 @@ export const quizzesSchema: CollectionSchema = {
     { name: 'sourceText', storage: 'text', interpretation: 'plain', required: true },
     { name: 'questions', storage: 'text', interpretation: 'json', required: true },
   ],
+  // Every role, plus the '*' fallback, is denied explicitly. (The SDK
+  // already denies a role with no rule and no '*', but this doesn't rely on it.)
   permissions: {
     viewer: noClientAccess,
     member: noClientAccess,
     admin: noClientAccess,
+    '*': noClientAccess,
   },
 }

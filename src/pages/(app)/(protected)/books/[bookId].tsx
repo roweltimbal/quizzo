@@ -6,14 +6,15 @@
  * outline is cleaned again here (cleanOutline) so books uploaded before a
  * rule change still get the current rule.
  *
- * Not built yet: quiz generation (Screen 5). "Play solo" logs the selection.
- * "Host room" arrives with the live room (P1).
+ * "Play solo" opens Generating (/generate) with the selection in router
+ * state. "Host room" arrives with the live room (P1).
  */
 
 import { useId, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from 'deepspace'
 import type { Book } from '../../../../schemas/books-schema'
+import type { GenerateRequest } from '../generate'
 import { chapterRange, cleanOutline, MAX_RANGE_PAGES, rangeError } from '../../../../lib/outline'
 import { card, primaryButton, radioChip, textInput } from '../../../../lib/styles'
 
@@ -64,6 +65,7 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 function ChapterPicker({ bookId, book }: { bookId: string; book: Book }) {
+  const navigate = useNavigate()
   const fieldId = useId()
   const pageCount = book.pageCount
   const outline = useMemo(
@@ -103,13 +105,14 @@ function ChapterPicker({ bookId, book }: { bookId: string; book: Book }) {
 
   const playSolo = () => {
     if (!canPlay) return
-    // Screen 5 (Generating) will take over from here.
-    console.log('[pick-chapter] Play solo', {
+    const request: GenerateRequest = {
       bookId,
       chapterTitle: selected !== null ? outline[selected].title : null,
       pageStart: start,
       pageEnd: end,
-    })
+      nonce: crypto.randomUUID(),
+    }
+    navigate('/generate', { state: request })
   }
 
   return (

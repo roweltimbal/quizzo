@@ -145,3 +145,35 @@ async function detectText(pdf: PDFDocumentProxy): Promise<boolean> {
   }
   return false
 }
+
+/**
+ * Text of pages start…end (1-based, inclusive), one entry per page.
+ * Whitespace is collapsed; pdf.js line breaks become spaces.
+ */
+export async function extractPageText(
+  data: ArrayBuffer,
+  start: number,
+  end: number,
+): Promise<{ page: number; text: string }[]> {
+  const pdf = await openPdf(data)
+  try {
+    if (start < 1 || end > pdf.numPages || start > end) {
+      throw new PdfReadError('Those pages are not in this PDF.')
+    }
+    const pages: { page: number; text: string }[] = []
+    for (let n = start; n <= end; n++) {
+      const page = await pdf.getPage(n)
+      const content = await page.getTextContent()
+      page.cleanup()
+      const text = content.items
+        .map((item) => ('str' in item ? item.str + (item.hasEOL ? ' ' : '') : ''))
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim()
+      pages.push({ page: n, text })
+    }
+    return pages
+  } finally {
+    void pdf.loadingTask.destroy()
+  }
+}

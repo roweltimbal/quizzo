@@ -24,6 +24,30 @@ export const radioChip =
 export const textInput =
   'h-12 w-full rounded-sm border border-line-strong bg-surface px-4 text-body text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand'
 
+/** Short-answer box: 120px tall. */
+export const textArea =
+  'h-30 w-full resize-none rounded-sm border border-line-strong bg-surface px-4 py-3 text-body text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand'
+
+/**
+ * Answer option (DESIGN.md), styled on a <span> after a hidden radio, like
+ * radioChip. 2px borders are drawn as border + 1px ring so the layout
+ * doesn't shift between states.
+ */
+const answerOptionBase =
+  'flex min-h-14 w-full items-center justify-between gap-3 rounded-md border p-4 text-left text-body text-ink transition-colors'
+
+/** At rest / selected (while playing). */
+export const answerOption = `${answerOptionBase} border-line-strong bg-surface peer-checked:border-brand peer-checked:bg-brand-soft peer-checked:ring-1 peer-checked:ring-brand peer-focus-visible:shadow-[0_0_0_2px_var(--surface),0_0_0_4px_var(--brand)]`
+
+/** Correct (Result). Always paired with a ✓ icon. */
+export const answerOptionCorrect = `${answerOptionBase} border-success bg-success-soft ring-1 ring-success`
+
+/** Incorrect (Result). Always paired with a ✗ icon. */
+export const answerOptionIncorrect = `${answerOptionBase} border-error bg-error-soft ring-1 ring-error`
+
+/** Progress bar track; the fill is `bg-brand` with a width. */
+export const progressTrack = 'h-2 flex-1 overflow-hidden rounded-pill bg-brand-soft'
+
 /** Card surface. */
 export const card = 'rounded-lg bg-surface shadow-card'
 
