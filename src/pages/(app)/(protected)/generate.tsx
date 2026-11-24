@@ -2,6 +2,10 @@
  * The solo flow, at /generate: Screen 5 (Generating) → 7 (Solo quiz) →
  * 11 (Grading) → 12 (Result). docs/SPEC.md.
  *
+ * Host mode (Pick chapter's "Host room"): the same generation, then the
+ * hostRoom action creates a live room and this page opens its Lobby. If
+ * creating the room fails, "Try again" reuses the generated quiz.
+ *
  * Opened from Pick chapter with the selection in router state:
  * download the PDF → extract pages start…end with pdf.js, tagged [p.N] →
  * generateQuiz (answers never reach the browser) → play → gradeQuiz →
@@ -16,7 +20,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useR2Files } from 'deepspace'
 import type { Book } from '../../../schemas/books-schema'
 import { QuizResult } from '../../../components/quiz/QuizResult'
@@ -37,8 +41,10 @@ export interface GenerateRequest {
   chapterTitle: string | null
   pageStart: number
   pageEnd: number
-  /** One per Play solo tap; see the file comment. */
+  /** One per Play solo / Host room tap; see the file comment. */
   nonce: string
+  /** 'host' creates a live room after generating. */
+  mode: 'solo' | 'host'
 }
 
 const STARTED_KEY = 'quizzo:generate-started'
@@ -67,6 +73,8 @@ interface Quiz {
 type State =
   | { step: 'reading' }
   | { step: 'writing' }
+  | { step: 'hosting' }
+  | { step: 'hostError'; quizId: string; message: string }
   | { step: 'tooLong'; chars: number }
   | { step: 'error'; message: string }
   | { step: 'playing'; quiz: Quiz; attempt: number }
@@ -82,6 +90,7 @@ function isRequest(value: unknown): value is GenerateRequest {
     !!v &&
     typeof v.bookId === 'string' &&
     typeof v.nonce === 'string' &&
+    (v.mode === 'solo' || v.mode === 'host') &&
     Number.isInteger(v.pageStart) &&
     Number.isInteger(v.pageEnd)
   )
@@ -138,11 +147,26 @@ function SoloFlow({ request }: { request: GenerateRequest }) {
   const { records, status } = useQuery<Book>('books')
   const book = records.find((r) => r.recordId === bookId)
   const { readFile } = useR2Files()
+  const navigate = useNavigate()
   const [state, setState] = useState<State>({ step: 'reading' })
   const startedFor = useRef<string | null>(null)
 
   const label = chapterTitle || (pageStart === pageEnd ? `p. ${pageStart}` : `pp. ${pageStart}–${pageEnd}`)
   const backTo = `/books/${bookId}`
+
+  /** Host mode: create the live room for a generated quiz, then open its Lobby. */
+  const openRoom = useCallback(
+    async (quizId: string) => {
+      setState({ step: 'hosting' })
+      try {
+        const { roomId } = await callAction<{ roomId: string }>('hostRoom', { quizId })
+        navigate(`/rooms/${roomId}`, { replace: true })
+      } catch (err) {
+        setState({ step: 'hostError', quizId, message: messageOf(err) })
+      }
+    },
+    [navigate],
+  )
 
   const generate = useCallback(
     async (fileId: string) => {
@@ -160,13 +184,14 @@ function SoloFlow({ request }: { request: GenerateRequest }) {
 
         setState({ step: 'writing' })
         const quiz = await callAction<Quiz>('generateQuiz', { bookId, chapterTitle, pageStart, pageEnd, sourceText })
-        setState({ step: 'playing', quiz, attempt: 1 })
+        if (request.mode === 'host') await openRoom(quiz.quizId)
+        else setState({ step: 'playing', quiz, attempt: 1 })
       } catch (err) {
         const message = messageOf(err)
         setState(message === TOO_LONG ? { step: 'tooLong', chars: 0 } : { step: 'error', message })
       }
     },
-    [readFile, bookId, chapterTitle, pageStart, pageEnd],
+    [readFile, bookId, chapterTitle, pageStart, pageEnd, request.mode, openRoom],
   )
 
   const grade = useCallback(async (quiz: Quiz, responses: QuizResponse[], attempt: number) => {
@@ -215,6 +240,27 @@ function SoloFlow({ request }: { request: GenerateRequest }) {
           detail={state.step === 'reading' ? 'Getting the text from your PDF.' : 'Writing your questions. This takes a few seconds.'}
           fill={state.step === 'reading' ? 'w-1/3' : 'w-2/3'}
         />
+      )
+
+    case 'hosting':
+      return <Busy title="Opening your room…" detail="Making a room code for your players." fill="w-5/6" />
+
+    case 'hostError':
+      return (
+        <Shell>
+          <div className={`${card} p-6`} role="alert">
+            <p className="text-heading text-ink">{state.message}</p>
+            <p className="mt-1 text-body text-ink-muted">Your quiz is ready. Only the room still needs to open.</p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+              <button type="button" className={primaryButton} onClick={() => void openRoom(state.quizId)}>
+                Try again
+              </button>
+              <Link to={backTo} className={secondaryButton}>
+                Back to book
+              </Link>
+            </div>
+          </div>
+        </Shell>
       )
 
     case 'tooLong':

@@ -77,14 +77,16 @@ The quiz-taker would see the answers. Quality control instead comes from: Zod sc
 - **Logic:** keep answers in local state; on Submit, send `{ quizId, responses }` to the grading server action and show Grading. Nothing is saved for solo play.
 
 ### 8. Lobby — P1 (shared by host and players)
-- **Host sees:** big room code (`QZ-4821`) with tap to copy, list of joined players appearing live, **Start** button.
+- **Host sees:** big room code (e.g. `KMTR`) with tap to copy, a "Copy invite link" button, list of joined players appearing live, **Start** button.
 - **Player sees:** the same code + player list, "Waiting for host to start…"
 - **DeepSpace:** Records + Rooms (`RecordRoom`, `/sdk-reference/worker/rooms`), real-time sync, presence (`/guides/presence-and-cursors`), permissions (only the host can change room status).
-- **Logic:** the code is generated **when the host taps Host room**. Room status: `lobby`.
+- **Logic:** the code is generated **server-side when the host taps Host room** (the `hostRoom` server action). Room status: `lobby`.
+- **Room codes:** 4 letters from a 24-letter alphabet with no `I` or `O` (so they can't be misread as 1 or 0), about 331k codes, unique among open rooms (`lobby` / `question`). Format borrowed from partypack; see the Decisions in docs/LOG.md.
 
 ### 9. Join room — P1
 - **Shows:** a code input and **Join** (opened from Home). Errors for "Room not found" and "Game already started."
-- **Logic:** look up the room by code, add a `players` record, go to the Lobby.
+- **Invite link:** `/join/<CODE>` joins directly (signed-out visitors sign in first and come back to the link).
+- **Logic:** the `joinRoom` server action looks up the room by code, adds the caller as a player (`players` record + the room's player list), and opens the Lobby. Rejoining a room you're already in just reopens it.
 
 ### 10. Live quiz — P1 (the DeepSpace showcase)
 - **Everyone sees:** player progress strip at the top ("Drew 1/5 · John 3/5 · Jen 4/5"), the current question, answer buttons, "Answer locked" after submitting.
@@ -120,11 +122,13 @@ The quiz-taker would see the answers. Quality control instead comes from: Zod sc
 |---|---|---|
 | `books` | ownerId, title, fileId, pageCount, outline[] (title + startPage) | owner read/write |
 | `quizzes` | ownerId, bookId, chapterTitle, pageStart, pageEnd, sourceText, questions[] (incl. answers) | server writes; answers/`sourceText` never sent to players before grading |
-| `rooms` (P1) | code, quizId, hostId, status (lobby/question/results), currentIndex, questionEndsAt | **host only** changes status and index |
-| `players` (P1) | roomId, userId, displayName | user adds themselves |
-| `answers` (P1, live rooms only) | roomId, userId, questionIndex, response, isCorrect, score, feedback | user writes their own `response`; **server only** writes isCorrect, score, feedback |
+| `rooms` (P1) | code, quizId, hostId, status (lobby/question/results), currentIndex, questionEndsAt, title, questions[] (**answer-stripped**: prompt, choices, page), playerIds[], players[] (userId + first name) | readable only by the host and joined players; created only by `hostRoom`; **host only** changes status and index |
+| `players` (P1) | roomId, userId, displayName (first name only) | written only by `hostRoom` / `joinRoom` with the caller's own id (a user adds only themselves); each user reads only their own rows |
+| `answers` (P1, live rooms only) | roomId, userId, questionIndex, response, isCorrect, score, feedback | written by a server action (`submitAnswer`); **server only** writes isCorrect, score, feedback |
 
-- **Counts aren't stored.** "3/4 answered" and "Drew 3/5" are computed by counting `answers` records.
+- **Players get questions from the room, not the quiz.** `hostRoom` copies the answer-stripped questions onto the room; `quizzes` stays unreadable by every client.
+- **No answer leaks during a question (step 2).** While `status` is `question`, players see only counts ("3/4 answered"), never other players' `response` / `isCorrect`. Responses and results become visible once the question closes, for the leaderboard.
+- **Live grading (step 2).** `gradeQuiz` only grades the quiz owner's solo play. Live rooms use a separate `submitAnswer` action that checks the caller is in the room, the room is on that question, and one answer per player per question.
 - **Not in MVP:** `attempts` / saved solo results.
 
 ---

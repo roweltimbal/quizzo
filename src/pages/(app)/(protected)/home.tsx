@@ -5,13 +5,13 @@
  * server already drops other users' books before they reach this query;
  * the `where` just states the intent.
  *
- * Not built yet: /upload (Screen 3) and /books/:id (Screen 4, Pick chapter).
+ * "Join room" opens /join (Screen 9) to enter a live room's code.
  */
 
 import { Link } from 'react-router-dom'
 import { useAuth, useQuery } from 'deepspace'
 import type { Book } from '../../../schemas/books-schema'
-import { bookTints, card, primaryButton } from '../../../lib/styles'
+import { bookTints, card, primaryButton, secondaryButton } from '../../../lib/styles'
 
 export default function HomePage() {
   const { userId } = useAuth()
@@ -23,11 +23,16 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
-      <header className="flex items-center justify-between gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-title text-ink">My books</h1>
-        <Link to="/upload" className={primaryButton}>
-          Upload book
-        </Link>
+        <div className="flex gap-2">
+          <Link to="/join" className={secondaryButton}>
+            Join room
+          </Link>
+          <Link to="/upload" className={primaryButton}>
+            Upload book
+          </Link>
+        </div>
       </header>
 
       <section aria-label="My books" className="mt-6">

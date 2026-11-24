@@ -48,6 +48,13 @@ export const answerOptionIncorrect = `${answerOptionBase} border-error bg-error-
 /** Progress bar track; the fill is `bg-brand` with a width. */
 export const progressTrack = 'h-2 flex-1 overflow-hidden rounded-pill bg-brand-soft'
 
+/** Lobby room code: `room-code` type in ink on a brand-soft card, tap to copy. */
+export const roomCodeCard =
+  'flex w-full flex-col items-center gap-1 rounded-lg bg-brand-soft px-6 py-6 text-center focus-ring'
+
+/** Chip (DESIGN.md): pill, 32px, label text, surface with line border. */
+export const chip = 'inline-flex h-8 items-center gap-2 rounded-pill border border-line bg-surface px-4 text-label text-ink'
+
 /** Card surface. */
 export const card = 'rounded-lg bg-surface shadow-card'
 

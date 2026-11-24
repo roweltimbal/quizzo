@@ -8,18 +8,46 @@
  * src/schemas/ (signed-out connections are `viewer` and can read nothing).
  */
 
-import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AuthGate } from 'deepspace'
 import { APP_NAME, APP_PITCH } from '../../../constants'
 import { card, primaryButton } from '../../../lib/styles'
 
+/**
+ * Sign-in always lands on /home (the worker's oauth-complete route), so the
+ * page a signed-out visitor opened — e.g. an invite link /join/KMTR — is
+ * remembered here and reopened after sign-in.
+ */
+const RETURN_KEY = 'quizzo:after-sign-in'
+
 export default function ProtectedLayout() {
   return (
     <AuthGate fallback={<SignInScreen />}>
+      <ReturnAfterSignIn />
       <Outlet />
     </AuthGate>
   )
+}
+
+function ReturnAfterSignIn() {
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  useEffect(() => {
+    let target: string | null = null
+    try {
+      target = sessionStorage.getItem(RETURN_KEY)
+      sessionStorage.removeItem(RETURN_KEY)
+    } catch {
+      return
+    }
+    // Same-app paths only.
+    if (target && target.startsWith('/') && !target.startsWith('//') && target !== pathname) {
+      navigate(target, { replace: true })
+    }
+    // Runs once, right after sign-in lands.
+  }, [])
+  return null
 }
 
 /** Screen 1 — Sign in (docs/SPEC.md). */
@@ -31,6 +59,12 @@ function SignInScreen() {
   // returns to /api/auth/oauth-complete and then lands on /home.
   const signInWithGoogle = () => {
     setRedirecting(true)
+    try {
+      const here = window.location.pathname + window.location.search
+      if (here !== '/home') sessionStorage.setItem(RETURN_KEY, here)
+    } catch {
+      // Storage blocked: sign-in still works, it just lands on /home.
+    }
     window.location.href = '/api/auth/social-redirect?provider=google'
   }
 

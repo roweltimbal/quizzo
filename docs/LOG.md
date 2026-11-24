@@ -19,7 +19,7 @@ Running record of what the agent did vs. what I verified or changed. Used for th
 
 ## Decisions
 
-### 2026-11-23 · Decision: removed the Review quiz screen
+### D1 2026-11-23 · Decision: removed the Review quiz screen
 
 **Decision (mine):** Dropped the pre-play Review screen (old screen 6). The
 mode is now chosen on Pick chapter: [Play solo] / [Host room] → Generating → play.
@@ -37,7 +37,7 @@ answers before playing and spoil the quiz.
 - Correct answers + explanations shown on the Result screen, so bad questions
   are visible after play
 
-### 2026-11-23 · Decision: Client-side PDF extraction + page-range fallback
+### D2 2026-11-23 · Decision: Client-side PDF extraction + page-range fallback
 
 **Decision:** Read the PDF (outline, page count, chapter text) in the browser
 with pdf.js. Only the chapter text goes to the server for the AI call.
@@ -49,9 +49,39 @@ handles the full file.
 they're junk, the user types a page range. Auto-detecting chapters from text
 isn't reliable (some chapter titles are images, not text).
 
-### 2026-11-23 · Decision: 40-page cap per quiz
+### D3 2026-11-23 · Decision: 40-page cap per quiz
 
 **Decision:** A quiz covers at most 40 pages.
 
 **Why:** Keeps the AI input under ~60k characters, generation fast, and
 6 questions focused on one chapter.
+
+### D4 2026-11-24 · Decision: Adjusted the prompt for AI response to meet audience's vocabulary and tone
+
+**Decision:** Adjusted the prompt to fit primary school students
+
+**Why:** Using the appropriate vocabulary and tone to increase clarity
+
+### D5 2026-11-24 · Decision: Live rooms on records, not partypack's game-room Durable Object
+
+**Decision:** Build the live room on records (`rooms` / `players` / `answers`,
+read with `useQuery`, written by server actions), not on a custom per-room
+game Durable Object like partypack's. From partypack, only the room-code
+format (4 letters, 24-letter alphabet, no I/O) and the join-by-link route
+(`/join/CODE`) were borrowed.
+
+**Why:** partypack's game room broadcasts one game state to every
+connection, so the answer is on the wire during a question. Its own code
+says a player "using devtools could read the truth early" and that the SDK
+has no per-connection redaction hook. Quizzo can't accept that: answers and
+`sourceText` must never reach players before grading. Records give
+per-record permissions on the server: `quizzes` is unreadable by every
+client, a room is readable only by its host and players, and only the host
+can change status/index. Records also use current SDK APIs, while
+partypack's game room is copied from SDK 0.9.2 (removed in 0.17).
+
+**Tradeoff:** Every answer and host step is a server round trip and a
+record write (a few hundred ms), not a ~50 ms game tick, and there is no
+server tick for timers (a question timer would be a `questionEndsAt`
+timestamp counted down in the browser). For a quiz with one question every
+10–30 seconds that latency doesn't matter.

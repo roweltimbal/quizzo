@@ -6,8 +6,8 @@
  * outline is cleaned again here (cleanOutline) so books uploaded before a
  * rule change still get the current rule.
  *
- * "Play solo" opens Generating (/generate) with the selection in router
- * state. "Host room" arrives with the live room (P1).
+ * "Play solo" and "Host room" open Generating (/generate) with the selection in router
+ * state; Host room then creates a live room (Lobby).
  */
 
 import { useId, useMemo, useState } from 'react'
@@ -16,7 +16,7 @@ import { useQuery } from 'deepspace'
 import type { Book } from '../../../../schemas/books-schema'
 import type { GenerateRequest } from '../generate'
 import { chapterRange, cleanOutline, MAX_RANGE_PAGES, rangeError } from '../../../../lib/outline'
-import { card, primaryButton, radioChip, textInput } from '../../../../lib/styles'
+import { card, primaryButton, radioChip, secondaryButton, textInput } from '../../../../lib/styles'
 
 export default function PickChapterPage() {
   const { bookId } = useParams<{ bookId: string }>()
@@ -103,7 +103,7 @@ function ChapterPicker({ bookId, book }: { bookId: string; book: Book }) {
     }
   }
 
-  const playSolo = () => {
+  const startQuiz = (mode: GenerateRequest['mode']) => {
     if (!canPlay) return
     const request: GenerateRequest = {
       bookId,
@@ -111,6 +111,7 @@ function ChapterPicker({ bookId, book }: { bookId: string; book: Book }) {
       pageStart: start,
       pageEnd: end,
       nonce: crypto.randomUUID(),
+      mode,
     }
     navigate('/generate', { state: request })
   }
@@ -194,9 +195,14 @@ function ChapterPicker({ bookId, book }: { bookId: string; book: Book }) {
           )}
         </fieldset>
 
-        <button type="button" onClick={playSolo} disabled={!canPlay} className={`${primaryButton} mt-6 w-full`}>
-          Play solo
-        </button>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
+          <button type="button" onClick={() => startQuiz('solo')} disabled={!canPlay} className={`${primaryButton} sm:flex-1`}>
+            Play solo
+          </button>
+          <button type="button" onClick={() => startQuiz('host')} disabled={!canPlay} className={`${secondaryButton} sm:flex-1`}>
+            Host room
+          </button>
+        </div>
       </div>
     </>
   )
