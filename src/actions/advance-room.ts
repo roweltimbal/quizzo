@@ -12,6 +12,11 @@
  * question the host was looking at: a double tap, or a tap after the room
  * already moved, does nothing.
  *
+ * Closing a question (next / results) also needs:
+ * - the host's own answer to it (the host plays too), and
+ * - an answer from every player, unless `force: true` ("Move on anyway":
+ *   players who haven't answered get 0 for that question).
+ *
  * Order matters: the room's index/status changes FIRST, then the closed
  * question is graded. submitAnswer re-reads the room after inserting a row
  * and deletes it if the question has closed, so every row that survives is
@@ -25,8 +30,9 @@ import type { Env } from '../../worker'
 import type { AnswerKeyEntry, Room } from '../schemas/rooms-schema'
 import type { Quiz } from '../schemas/quizzes-schema'
 import { buildLeaderboard } from '../lib/leaderboard'
+import { missingAnswersMessage } from '../lib/room'
 import { claudeGenerate, type GenerateFn } from '../lib/grade-short-answer'
-import { gradeClosedQuestion, gradeRoomShortAnswers, loadQuiz, loadRoom, refreshLeaderboard } from './room-shared'
+import { gradeClosedQuestion, gradeRoomShortAnswers, listAnswers, loadQuiz, loadRoom, refreshLeaderboard } from './room-shared'
 
 export const GRADE_ROOM_JOB = 'grade-room-short-answers'
 
@@ -34,10 +40,13 @@ const paramsSchema = z.object({
   roomId: z.string().min(1),
   op: z.enum(['start', 'next', 'results']),
   expectedIndex: z.number().int().min(0).optional(),
+  /** Close the question even though some players haven't answered (they get 0). */
+  force: z.boolean().optional(),
 })
 
 const NOT_FOUND = 'Room not found.'
 const FAILED = "Couldn't move the game on. Try again."
+export const HOST_FIRST = 'Submit your own answer first.'
 
 /** Correct answers for the Result screen, published at `results`. */
 export function answerKeyFor(quiz: Quiz): AnswerKeyEntry[] {
@@ -58,7 +67,7 @@ export function makeAdvanceRoom(queueGrading: (env: Env, tools: ActionTools, roo
   return async ({ userId, params, tools, env }) => {
     const input = paramsSchema.safeParse(params)
     if (!input.success) return { success: false, error: 'Invalid request.' }
-    const { roomId, op, expectedIndex } = input.data
+    const { roomId, op, expectedIndex, force } = input.data
 
     // Host only: RBAC is off for action tools, so check it here.
     const room = await loadRoom(tools, roomId)
@@ -85,6 +94,20 @@ export function makeAdvanceRoom(queueGrading: (env: Env, tools: ActionTools, roo
     const isLast = closing >= total - 1
     if (op === 'next' && isLast) return { success: false, error: 'This is the last question. Tap See results.' }
     if (op === 'results' && !isLast) return { success: false, error: 'Finish the other questions first.' }
+
+    // Who has answered the question being closed (from the rows, the source of truth).
+    let answeredIds: Set<string>
+    try {
+      answeredIds = new Set((await listAnswers(tools, roomId, closing)).map((r) => r.answer.userId))
+    } catch (err) {
+      console.error('[advanceRoom] could not read answers', err)
+      return { success: false, error: FAILED }
+    }
+    // The host plays too: they lock their own answer before moving on.
+    if (!answeredIds.has(userId)) return { success: false, error: HOST_FIRST }
+    // Closing with missing answers gives those players 0, so it needs force.
+    const missing = (room.players ?? []).filter((p) => !answeredIds.has(p.userId)).length
+    if (missing > 0 && !force) return { success: false, error: missingAnswersMessage(missing) }
 
     const quiz = await loadQuiz(tools, room.quizId)
     if (!quiz) return { success: false, error: FAILED }

@@ -26,8 +26,8 @@ async function liveRoom(players: string[] = ['drew']) {
   const hosted = (await env.call('host', hostRoom, { quizId: 'quiz1' })) as { data: { roomId: string; code: string } }
   for (const p of players) await env.call(p, joinRoom, { code: hosted.data.code })
   const roomId = hosted.data.roomId
-  const advance = (op: string, expectedIndex?: number, as = 'host') =>
-    env.call(as, advanceRoom, { roomId, op, expectedIndex })
+  const advance = (op: string, expectedIndex?: number, as = 'host', force?: boolean) =>
+    env.call(as, advanceRoom, { roomId, op, expectedIndex, force })
   const submit = (as: string, questionIndex: number, response: number | string) =>
     env.call(as, submitAnswer, { roomId, questionIndex, response })
   const tools = fakeTools('system', env.db)
@@ -45,8 +45,10 @@ describe('advanceRoom', () => {
   })
 
   it('a double tap on Next moves only one question', async () => {
-    const { advance, room, roomId } = await liveRoom()
+    const { advance, submit, room, roomId } = await liveRoom()
     await advance('start')
+    await submit('host', 0, 0)
+    await submit('drew', 0, 1)
     await Promise.all([advance('next', 0), advance('next', 0)])
     expect(room(roomId).currentIndex).toBe(1)
     // A stale tap later does nothing either.
@@ -55,12 +57,71 @@ describe('advanceRoom', () => {
   })
 
   it('See results only on the last question; Next not on the last one', async () => {
-    const { advance, room, roomId } = await liveRoom()
+    const { advance, submit, room, roomId } = await liveRoom()
     await advance('start')
     expect(await advance('results', 0)).toEqual({ success: false, error: 'Finish the other questions first.' })
-    await advance('next', 0)
+    await submit('host', 0, 0)
+    await advance('next', 0, 'host', true)
     expect((await advance('next', 1)).success).toBe(false)
     expect(room(roomId).status).toBe('question')
+  })
+})
+
+describe('closing a question needs answers', () => {
+  it('the host must answer before Next or See results, even with force', async () => {
+    const { advance, submit, room, roomId } = await liveRoom()
+    await advance('start')
+    await submit('drew', 0, 2)
+    expect(await advance('next', 0)).toEqual({ success: false, error: 'Submit your own answer first.' })
+    expect(await advance('next', 0, 'host', true)).toEqual({ success: false, error: 'Submit your own answer first.' })
+    expect(room(roomId).currentIndex).toBe(0)
+
+    await submit('host', 0, 1)
+    expect((await advance('next', 0)).success).toBe(true)
+    expect(room(roomId).currentIndex).toBe(1)
+
+    await submit('drew', 1, 'It rained.')
+    expect(await advance('results', 1)).toEqual({ success: false, error: 'Submit your own answer first.' })
+    expect(room(roomId).status).toBe('question')
+    expect(room(roomId).answerKey).toBeNull()
+  })
+
+  it('missing answers block closing unless force is set; then they score 0', async () => {
+    const { advance, submit, room, roomId, answers } = await liveRoom(['drew', 'jen'])
+    await advance('start')
+    await submit('host', 0, 2)
+    expect(await advance('next', 0)).toEqual({
+      success: false,
+      error: "2 players haven't answered. They'll get 0 for this question.",
+    })
+    await submit('drew', 0, 2)
+    expect(await advance('next', 0)).toEqual({
+      success: false,
+      error: "1 player hasn't answered. They'll get 0 for this question.",
+    })
+    expect(room(roomId).currentIndex).toBe(0)
+    expect(answers().every((a) => a.graded === false)).toBe(true)
+
+    expect((await advance('next', 0, 'host', true)).success).toBe(true)
+    expect(room(roomId).currentIndex).toBe(1)
+    expect(room(roomId).leaderboard?.map((e) => [e.userId, e.score])).toEqual([
+      ['host', 1],
+      ['drew', 1],
+      ['jen', 0],
+    ])
+  })
+
+  it('once everyone has answered, no force is needed (including See results)', async () => {
+    const { advance, submit, room, roomId } = await liveRoom()
+    await advance('start')
+    await submit('host', 0, 0)
+    await submit('drew', 0, 0)
+    expect((await advance('next', 0)).success).toBe(true)
+    await submit('host', 1, 'A.')
+    expect((await advance('results', 1)).success).toBe(false)
+    await submit('drew', 1, 'B.')
+    expect((await advance('results', 1)).success).toBe(true)
+    expect(room(roomId).status).toBe('results')
   })
 })
 
@@ -83,7 +144,8 @@ describe('submitAnswer', () => {
     expect(await submit('drew', 1, 'early')).toEqual({ success: false, error: 'This question has closed.' })
     expect(await submit('drew', 0, 7)).toEqual({ success: false, error: 'Pick one option.' })
     expect(await submit('drew', 0, 'B')).toEqual({ success: false, error: 'Pick one option.' })
-    await advance('next', 0)
+    await submit('host', 0, 0)
+    await advance('next', 0, 'host', true)
     expect(await submit('drew', 0, 1)).toEqual({ success: false, error: 'This question has closed.' })
     expect(await submit('drew', 1, '   ')).toMatchObject({ success: false })
   })
@@ -126,7 +188,7 @@ describe('closing questions and the leaderboard', () => {
     expect(room(roomId).answerKey).toBeNull()
     expect(JSON.stringify(room(roomId))).not.toMatch(/answerIndex|expectedAnswer|explanation|secret source/)
 
-    await advance('next', 0)
+    await advance('next', 0, 'host', true) // Jen gets 0
     const q0 = Object.fromEntries(answers().filter((a) => a.questionIndex === 0).map((a) => [a.userId, a.isCorrect]))
     expect(q0).toEqual({ drew: true, host: false })
     expect(room(roomId).leaderboard?.map((e) => [e.displayName, e.score])).toEqual([
@@ -138,7 +200,8 @@ describe('closing questions and the leaderboard', () => {
     expect(room(roomId).answerKey).toBeNull()
 
     await submit('drew', 1, 'Because of the rain.')
-    await advance('results', 1)
+    await submit('host', 1, 'I am not sure.')
+    await advance('results', 1, 'host', true)
     expect(room(roomId).status).toBe('results')
     expect(room(roomId).answerKey).toEqual([
       { answerIndex: 2, correctAnswer: 'C', explanation: 'Because.', sourcePage: 13 },
@@ -153,6 +216,7 @@ describe('closing questions and the leaderboard', () => {
     const { advance, submit, room, roomId, answers, tools } = await liveRoom(['drew'])
     await advance('start')
     await submit('drew', 0, 1)
+    await submit('host', 0, 1)
     await advance('next', 0)
     await submit('drew', 1, 'It rained.')
     await submit('host', 1, 'No idea.')
@@ -185,16 +249,18 @@ describe('closing questions and the leaderboard', () => {
   it('if the AI fails both attempts: graded, "couldn\'t grade" (score null), counts 0', async () => {
     const { advance, submit, roomId, answers, room, tools } = await liveRoom(['drew'])
     await advance('start')
-    await advance('next', 0)
+    await submit('host', 0, 0)
+    await advance('next', 0, 'host', true)
     await submit('drew', 1, 'It rained.')
+    await submit('host', 1, 'No idea.')
     await advance('results', 1)
     const failing = vi.fn<GenerateFn>(async () => {
       throw new Error('AI down')
     })
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(await gradeRoomShortAnswers(tools, roomId, failing)).toBe(1)
-    expect(failing).toHaveBeenCalledTimes(2)
-    expect(answers()[0]).toMatchObject({ graded: true, isCorrect: false, score: null, feedback: null })
+    expect(await gradeRoomShortAnswers(tools, roomId, failing)).toBe(2)
+    expect(failing).toHaveBeenCalledTimes(4) // two attempts per answer
+    expect(answers().find((a) => a.userId === 'drew' && a.questionIndex === 1)).toMatchObject({ graded: true, isCorrect: false, score: null, feedback: null })
     expect(room(roomId).leaderboard?.find((e) => e.userId === 'drew')).toMatchObject({ score: 0, pending: false })
     vi.restoreAllMocks()
   })

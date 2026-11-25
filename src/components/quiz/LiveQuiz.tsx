@@ -12,6 +12,7 @@ import { useEffect, useId, useState } from 'react'
 import type { Answer } from '../../schemas/answers-schema'
 import type { Room } from '../../schemas/rooms-schema'
 import { MAX_SHORT_ANSWER_CHARS } from '../../lib/quiz'
+import { missingAnswersMessage } from '../../lib/room'
 import { ActionError, callAction } from '../../lib/actions-client'
 import { answerOption, card, primaryButton, progressTrack, secondaryButton, textArea } from '../../lib/styles'
 
@@ -57,6 +58,11 @@ function LiveQuestion({ roomId, room, userId, myAnswers }: Props) {
   const answeredIds = new Set(room.answered?.index === index ? room.answered.userIds : [])
   if (locked) answeredIds.add(userId)
   const answeredCount = Math.min(answeredIds.size, playerCount)
+  const missing = (room.players ?? []).filter((p) => !answeredIds.has(p.userId)).length
+  const allAnswered = missing === 0
+  // "Move on anyway" confirm; closes itself if the last player answers meanwhile.
+  const [confirming, setConfirming] = useState(false)
+  const showConfirm = confirming && !allAnswered
 
   const submit = async () => {
     if (!canSubmit) return
@@ -72,11 +78,11 @@ function LiveQuestion({ roomId, room, userId, myAnswers }: Props) {
     }
   }
 
-  const advance = async () => {
+  const advance = async (force: boolean) => {
     setAdvancing(true)
     setError(null)
     try {
-      await callAction('advanceRoom', { roomId, op: isLast ? 'results' : 'next', expectedIndex: index })
+      await callAction('advanceRoom', { roomId, op: isLast ? 'results' : 'next', expectedIndex: index, force })
       // The room record changes and every screen moves on together.
     } catch (err) {
       setError(err instanceof ActionError ? err.message : "Couldn't move the game on. Try again.")
@@ -86,8 +92,7 @@ function LiveQuestion({ roomId, room, userId, myAnswers }: Props) {
     }
   }
 
-  // One primary button per screen: Submit until locked, then the host's Next.
-  const hostButtonClass = locked ? primaryButton : secondaryButton
+  const nextLabel = advancing ? 'Moving on…' : isLast ? 'See results' : 'Next'
 
   return (
     <div>
@@ -163,18 +168,63 @@ function LiveQuestion({ roomId, room, userId, myAnswers }: Props) {
           </p>
         )}
 
+        {/* One primary per screen: Submit until locked, then the host's Next. */}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           {!locked && (
             <button type="submit" className={`${primaryButton} sm:flex-1`} disabled={!canSubmit}>
               {submitting ? 'Locking…' : 'Submit'}
             </button>
           )}
-          {isHost && (
-            <button type="button" className={`${hostButtonClass} sm:flex-1`} onClick={() => void advance()} disabled={advancing}>
-              {advancing ? 'Moving on…' : isLast ? 'See results' : 'Next'}
+          {isHost && locked && (
+            <button
+              type="button"
+              className={`${primaryButton} sm:flex-1`}
+              onClick={() => void advance(false)}
+              disabled={!allAnswered || advancing}
+            >
+              {nextLabel}
+            </button>
+          )}
+          {isHost && locked && !allAnswered && !showConfirm && (
+            <button type="button" className={`${secondaryButton} sm:flex-1`} onClick={() => setConfirming(true)}>
+              Move on anyway
             </button>
           )}
         </div>
+
+        {/* Host: the server also refuses to move on before the host answers. */}
+        {isHost && !locked && (
+          <p className="mt-2 text-center text-caption text-ink-muted">Submit your answer to move the game on.</p>
+        )}
+        {isHost && locked && !allAnswered && !showConfirm && (
+          <p className="mt-2 text-center text-caption text-ink-muted">Next unlocks when everyone has answered.</p>
+        )}
+
+        {isHost && locked && showConfirm && (
+          <div role="alertdialog" aria-labelledby={`${id}-confirm`} className="mt-4 rounded-md border border-line-strong p-4">
+            <p id={`${id}-confirm`} className="text-body text-ink">
+              {missingAnswersMessage(missing)}
+            </p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
+              <button
+                type="button"
+                className={`${secondaryButton} sm:flex-1`}
+                onClick={() => void advance(true)}
+                disabled={advancing}
+                autoFocus
+              >
+                {advancing ? 'Moving on…' : isLast ? 'See results anyway' : 'Move on'}
+              </button>
+              <button
+                type="button"
+                className="focus-ring h-12 rounded-pill px-6 text-label text-brand sm:flex-1"
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {!isHost && locked && (
           <p className="mt-2 text-center text-body text-ink-muted" aria-live="polite">

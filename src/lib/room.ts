@@ -53,3 +53,11 @@ export interface RoomPlayer {
 
 /** Statuses a code is still reserved in (a finished room frees its code). */
 export const OPEN_ROOM_STATUSES: readonly RoomStatus[] = ['lobby', 'question']
+
+/**
+ * Live quiz: the host's confirm before closing a question early, and
+ * advanceRoom's refusal without force. Those players get 0 for it.
+ */
+export function missingAnswersMessage(n: number): string {
+  return `${n} ${n === 1 ? "player hasn't" : "players haven't"} answered. They'll get 0 for this question.`
+}
