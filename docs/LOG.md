@@ -85,3 +85,17 @@ record write (a few hundred ms), not a ~50 ms game tick, and there is no
 server tick for timers (a question timer would be a `questionEndsAt`
 timestamp counted down in the browser). For a quiz with one question every
 10–30 seconds that latency doesn't matter.
+
+## Quick Logs
+
+### 2026-11-24 Testing: Tested lobby hosting with two accounts - Regression check on solo play
+
+Deployed live room step 1. Regression: solo still works. Verified on quizzo.app.space with two accounts in both directions (laptop hosts / phone joins, phone hosts / laptop joins); players appear live. Also verified upload + solo on mobile.
+
+### 2026-11-25 Game Design Change
+
+Agent's plan included a per-player progress strip from an older spec; removed it, since host-controlled Next keeps everyone on the same question.
+
+### 2026-11-25 Multiplayer: Hosts Next Button Availability Condition Change
+
+Two-account test found the host could skip their own question and force others to skip. Fixed: the host must answer first (enforced server-side); Next waits for everyone, with a confirmed 'Move on anyway' so one absent player can't stall the game.
