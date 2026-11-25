@@ -1,7 +1,7 @@
 /**
  * gradeQuiz — Screen 11 (docs/SPEC.md § Grading), solo play.
  *
- * Multiple choice is graded in code. Only the short answer goes to Claude,
+ * Multiple choice is graded in code. Only the short answer goes to Claude (src/lib/grade-short-answer.ts),
  * with the question, expected answer, the player's answer and the chapter
  * text; the reply is Zod-validated (one retry). If the AI call fails, the
  * MC results still come back and the short answer is marked ungraded.
@@ -11,22 +11,12 @@
  * quiz ownership itself. AI is billed to the app owner (no authToken).
  */
 
-import { generateText } from 'ai'
-import { createDeepSpaceAI } from 'deepspace/worker'
 import type { ActionHandler } from 'deepspace/worker'
 import { z } from 'zod'
 import type { Env } from '../../worker'
 import type { Quiz } from '../schemas/quizzes-schema'
-import {
-  buildResult,
-  gradeSystemPrompt,
-  gradeUserPrompt,
-  parseGradeOutput,
-  QUIZ_MODEL,
-  responsesError,
-  type QuizResponse,
-  type ShortGrade,
-} from '../lib/quiz'
+import { buildResult, responsesError, type QuizResponse, type ShortGrade } from '../lib/quiz'
+import { claudeGenerate, gradeShortAnswer } from '../lib/grade-short-answer'
 
 const paramsSchema = z.object({
   quizId: z.string().min(1),
@@ -48,30 +38,21 @@ export const gradeQuiz: ActionHandler<Env> = async ({ userId, params, tools, env
 
   const shortIndex = quiz.questions.findIndex((q) => q.type === 'short')
   const shortGrade: ShortGrade =
-    shortIndex === -1 ? { graded: false } : await gradeShortAnswer(env, quiz, shortIndex, String(responses[shortIndex]))
+    shortIndex === -1
+      ? { graded: false }
+      : await gradeShortAnswer(
+          claudeGenerate(env),
+          {
+            question: quiz.questions[shortIndex].prompt,
+            expectedAnswer: quiz.questions[shortIndex].expectedAnswer ?? '',
+            answer: String(responses[shortIndex]),
+            sourceText: quiz.sourceText,
+            pageStart: quiz.pageStart,
+            pageEnd: quiz.pageEnd,
+            sourcePage: quiz.questions[shortIndex].sourcePage,
+          },
+          'gradeQuiz',
+        )
 
   return { success: true, data: buildResult(quiz.questions, responses as QuizResponse[], shortGrade) }
-}
-
-async function gradeShortAnswer(env: Env, quiz: Quiz, index: number, answer: string): Promise<ShortGrade> {
-  const q = quiz.questions[index]
-  const model = createDeepSpaceAI(env, 'anthropic')(QUIZ_MODEL)
-  const system = gradeSystemPrompt(quiz.pageStart, quiz.pageEnd)
-  const basePrompt = gradeUserPrompt(q.prompt, q.expectedAnswer ?? '', answer.trim(), quiz.sourceText)
-  let prompt = basePrompt
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    let text: string
-    try {
-      ;({ text } = await generateText({ model, system, prompt, maxRetries: 1, timeout: { totalMs: 60_000 } }))
-    } catch (err) {
-      console.error(`[gradeQuiz] AI call failed (attempt ${attempt})`, err)
-      continue
-    }
-    const parsed = parseGradeOutput(text, quiz.pageStart, quiz.pageEnd, q.sourcePage)
-    if (parsed.ok) return parsed.grade
-    console.warn(`[gradeQuiz] invalid output (attempt ${attempt}): ${parsed.error}`)
-    prompt = `${basePrompt}\n\nYour previous reply was rejected: ${parsed.error}\nReply again with only the corrected JSON object.`
-  }
-  return { graded: false }
 }

@@ -7,7 +7,7 @@
 import { Check, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { shortScoreLabel, type QuestionResult, type QuizResult as Result } from '../../lib/quiz'
-import { answerOptionCorrect, answerOptionIncorrect, card, primaryButton, secondaryButton } from '../../lib/styles'
+import { answerOption, answerOptionCorrect, answerOptionIncorrect, card, primaryButton, secondaryButton } from '../../lib/styles'
 
 interface Props {
   title: string
@@ -59,11 +59,14 @@ function Mark({ correct }: { correct: boolean }) {
   )
 }
 
-function QuestionReview({ q, n, total }: { q: QuestionResult; n: number; total: number }) {
+/** One question in the review list (solo and live Result). */
+export function QuestionReview({ q, n, total }: { q: QuestionResult; n: number; total: number }) {
   const grade = q.grade
   const status =
     q.type === 'short'
-      ? grade?.graded
+      ? q.pending
+        ? 'Grading…'
+        : grade?.graded
         ? shortScoreLabel(grade.score)
         : 'Not graded'
       : q.correct
@@ -80,9 +83,9 @@ function QuestionReview({ q, n, total }: { q: QuestionResult; n: number; total: 
       <div className="mt-3 flex flex-col gap-2">
         <div>
           <p className="mb-1 text-caption text-ink-muted">Your answer</p>
-          <div className={q.correct ? answerOptionCorrect : answerOptionIncorrect}>
+          <div className={q.pending ? answerOption : q.correct ? answerOptionCorrect : answerOptionIncorrect}>
             <span className="min-w-0 whitespace-pre-wrap break-words">{q.yourAnswer}</span>
-            <Mark correct={q.correct} />
+            {!q.pending && <Mark correct={q.correct} />}
           </div>
         </div>
 
@@ -99,7 +102,9 @@ function QuestionReview({ q, n, total }: { q: QuestionResult; n: number; total: 
 
       {q.type === 'short' && (
         <p className="mt-3 text-body text-ink">
-          {grade?.graded ? (
+          {q.pending ? (
+            <span className="text-ink-muted">Grading your answer…</span>
+          ) : grade?.graded ? (
             <>
               {grade.feedback} <span className="text-ink-muted">See p. {grade.page}.</span>
             </>

@@ -222,6 +222,8 @@ export interface QuestionResult {
   sourcePage: number
   /** Short answer only. */
   grade?: ShortGrade
+  /** Live room: the short answer is still being graded. */
+  pending?: boolean
 }
 
 export interface QuizResult {

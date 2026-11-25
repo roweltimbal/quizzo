@@ -1,24 +1,33 @@
 /**
- * Screen 8 — Lobby (docs/SPEC.md), at /rooms/:roomId. Shared by host and
- * players.
+ * Live room at /rooms/:roomId, shared by host and players. The room's
+ * status picks the screen, and every device switches together when the
+ * room record changes (useQuery syncs it live, no polling):
+ *   lobby    → Screen 8, Lobby (Start is host only)
+ *   question → Screen 10, Live quiz
+ *   results  → Screen 12, Result with leaderboard
  *
- * The room record syncs live (useQuery), so players appear as they join.
  * Only the host and joined players can read the room ('collaborator'), so
  * anyone else gets "Room not found". A presence room (`room:<id>`) marks
- * who has the lobby open right now.
- *
- * Not built yet: Start (the live quiz, Screen 10).
+ * who has the lobby open right now. Each player's answers come from their
+ * own answer rows (readable only by them).
  */
 
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth, usePresenceRoom, useQuery } from 'deepspace'
+import type { Answer } from '../../../../schemas/answers-schema'
 import type { Room } from '../../../../schemas/rooms-schema'
+import { LiveQuiz } from '../../../../components/quiz/LiveQuiz'
+import { LiveResult } from '../../../../components/quiz/LiveResult'
+import { ActionError, callAction } from '../../../../lib/actions-client'
 import { card, chip, primaryButton, roomCodeCard, secondaryButton } from '../../../../lib/styles'
 
-export default function LobbyPage() {
+export default function RoomPage() {
   const { roomId = '' } = useParams<{ roomId: string }>()
+  const { userId } = useAuth()
   const { records, status } = useQuery<Room>('rooms')
+  // Answer rows are owner-only: the server sends just this user's.
+  const answers = useQuery<Answer>('answers', { where: { roomId } })
   const room = records.find((r) => r.recordId === roomId)
 
   if (status === 'loading') {
@@ -45,9 +54,17 @@ export default function LobbyPage() {
     )
   }
 
+  const myAnswers = answers.records.map((r) => r.data).filter((a) => a.userId === userId)
+
   return (
     <Shell>
-      <Lobby roomId={roomId} room={room.data} />
+      {room.data.status === 'lobby' ? (
+        <Lobby roomId={roomId} room={room.data} />
+      ) : room.data.status === 'question' ? (
+        <LiveQuiz roomId={roomId} room={room.data} userId={userId ?? ''} myAnswers={myAnswers} />
+      ) : (
+        <LiveResult room={room.data} userId={userId ?? ''} myAnswers={myAnswers} />
+      )}
     </Shell>
   )
 }
@@ -60,11 +77,25 @@ function Lobby({ roomId, room }: { roomId: string; room: Room }) {
   const { userId } = useAuth()
   const { peers } = usePresenceRoom(`room:${roomId}`)
   const [copied, setCopied] = useState<'code' | 'link' | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
 
   const isHost = userId === room.hostId
   const online = new Set([...peers.map((p) => p.userId), ...(userId ? [userId] : [])])
   const players = Array.isArray(room.players) ? room.players : []
   const questionCount = Array.isArray(room.questions) ? room.questions.length : 0
+
+  const start = async () => {
+    setStarting(true)
+    setStartError(null)
+    try {
+      await callAction('advanceRoom', { roomId, op: 'start' })
+      // The room record switches every screen to the first question.
+    } catch (err) {
+      setStartError(err instanceof ActionError ? err.message : "Couldn't start. Try again.")
+      setStarting(false)
+    }
+  }
 
   const copy = async (what: 'code' | 'link') => {
     const text = what === 'code' ? room.code : `${window.location.origin}/join/${room.code}`
@@ -125,14 +156,16 @@ function Lobby({ roomId, room }: { roomId: string; room: Room }) {
         </ul>
       </section>
 
-      {room.status !== 'lobby' ? (
-        <p className={`${card} mt-6 p-4 text-center text-body text-ink-muted`}>The game has started.</p>
-      ) : isHost ? (
+      {isHost ? (
         <div className="mt-6">
-          <button type="button" className={`${primaryButton} w-full`} disabled>
-            Start
+          <button type="button" className={`${primaryButton} w-full`} onClick={() => void start()} disabled={starting}>
+            {starting ? 'Starting…' : 'Start'}
           </button>
-          <p className="mt-2 text-center text-caption text-ink-muted">Starting the live quiz comes in the next update.</p>
+          {startError && (
+            <p role="alert" className="mt-2 text-center text-body text-error">
+              {startError}
+            </p>
+          )}
         </div>
       ) : (
         <p className={`${card} mt-6 p-4 text-center text-body text-ink`} aria-live="polite">

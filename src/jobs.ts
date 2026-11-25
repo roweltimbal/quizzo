@@ -40,11 +40,34 @@
  */
 
 import type { Job, JobContext } from 'deepspace/worker'
+import type { Env } from '../worker'
+import { GRADE_ROOM_JOB } from './actions/advance-room'
+import { gradeRoomShortAnswers } from './actions/room-shared'
+import { claudeGenerate } from './lib/grade-short-answer'
+import { createActionTools } from './server/action-routes'
 
-export async function runJob(
-  _job: Job,
-  _ctx: JobContext,
-  _env: unknown,
-): Promise<void> {
-  // No-op — implement your job handlers here. Dispatch on `_job.type`.
+/**
+ * Jobs in this app:
+ *
+ * - `grade-room-short-answers` { roomId }: queued by advanceRoom when a live
+ *   room reaches results. Grades each ungraded short answer with the AI and
+ *   refreshes the leaderboard after each (src/actions/room-shared.ts).
+ *   Retried up to 3 times; graded rows are skipped, so a retry never pays
+ *   twice. Safe to run more than once, and does nothing unless the room is
+ *   at results, so a client queueing it by hand can't grade early.
+ */
+export async function runJob(job: Job, _ctx: JobContext, env: Env): Promise<unknown> {
+  switch (job.type) {
+    case GRADE_ROOM_JOB: {
+      const roomId = (job.payload as { roomId?: unknown } | null)?.roomId
+      if (typeof roomId !== 'string' || !roomId) throw new Error('roomId is required')
+      // Record access as the app (RBAC off), like a server action. No caller
+      // token: this job calls no user-billed integration.
+      const tools = createActionTools(env, env.OWNER_USER_ID, '')
+      const graded = await gradeRoomShortAnswers(tools, roomId, claudeGenerate(env))
+      return { graded }
+    }
+    default:
+      throw new Error(`Unknown job type: ${job.type}`)
+  }
 }

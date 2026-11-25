@@ -89,22 +89,24 @@ The quiz-taker would see the answers. Quality control instead comes from: Zod sc
 - **Logic:** the `joinRoom` server action looks up the room by code, adds the caller as a player (`players` record + the room's player list), and opens the Lobby. Rejoining a room you're already in just reopens it.
 
 ### 10. Live quiz — P1 (the DeepSpace showcase)
-- **Everyone sees:** player progress strip at the top ("Drew 1/5 · John 3/5 · Jen 4/5"), the current question, answer buttons, "Answer locked" after submitting.
-- **Host only:** "3/4 answered" + **Next**. Players have **no** Next button.
-- **DeepSpace:** real-time sync of the room record (`status`, `currentIndex`, `questionEndsAt`) and live `answers` records.
-- **Logic:** the host advances the game. Multiple-choice answers are scored right away. Each player can only write their own answer. Timer (server timestamp) is optional.
-- **Edge cases (optional):** a late joiner waits for the next question; a refresh returns to the current question.
+- **Everyone sees:** "Question 2/6" with the progress bar, "3/4 answered", the current question, answer buttons, and "Answer locked" after submitting. No per-player progress strip: the host controls Next, so everyone is always on the same question.
+- **Host only:** **Next**, or **See results** on the last question. Players have **no** Next button; once locked they see "Waiting for the host…".
+- **DeepSpace:** real-time sync of the room record (`status`, `currentIndex`, `answered`, `leaderboard`) and the player's own `answers` records.
+- **Logic:** the host moves the game on through the `advanceRoom` server action (start / next / results), which checks the caller is the host. Rooms are read-only for every client, because closing a question has to grade it at the same moment, and a direct record edit can't do that. Players lock answers through `submitAnswer`. **An answer is graded when the host closes the question, not when it's submitted**, so while a question is open nothing correct/incorrect exists anywhere, not even in the player's own row.
+- **Refresh:** returns to the current question; the player's own answer row brings their answer back locked.
+- **Not built:** timer, late joiners (joining needs the lobby), players leaving mid-game.
 
 ### 11. Grading — P0
 - **Shows:** a short "Grading your answers…" state (can be part of the Result screen). Multiple-choice results appear instantly; the short-answer result fills in when the AI responds.
 - **DeepSpace:** Server action + AI (same `createDeepSpaceAI` setup, `claude-haiku-4-5`).
 - **Logic:** the server loads the quiz record (answers + `sourceText`). **Multiple choice is graded in code, not by AI.** For the short answer, send the question, the expected answer, the student's answer, and `sourceText` to Claude, and get back JSON `{score 0–1, feedback, page}` (Zod-validated).
 - **Solo:** the server action returns the full results (per-question ✓/✗, correct answer, explanation, short-answer feedback) directly. Nothing is stored.
-- **Live room:** results are written to the player's `answers` records so the leaderboard updates live. Only the server can write `isCorrect`, `score`, and `feedback`.
+- **Live room:** results are written to the player's `answers` records so the leaderboard updates live. Only the server can write `isCorrect`, `score`, and `feedback`. Multiple choice is graded in code by `advanceRoom` when the host closes each question. Short answers are graded by a background job (`grade-room-short-answers`, queued at See results; up to 3 attempts; already-graded rows are skipped), with the same grader, prompt, 0.5 threshold and feedback cleanup as solo. If the job can't be queued, `advanceRoom` grades inline. If the AI fails both attempts: "Couldn't grade this one", counted as 0.
 
 ### 12. Result — P0 (leaderboard is P1)
 - **Shows:** "Quiz complete! You scored…", Correct / Incorrect counts, then each question with ✓/✗, the correct answer, and the AI feedback (with page number).
-- **Live room only:** leaderboard at the top (book + chapter title, ranked players) that updates as grading finishes.
+- **Live room only:** leaderboard at the top (book + chapter title, ranked players; ties share a rank) that updates as grading finishes, with "grading…" next to scores still waiting. Then the player's own review, with correct answers from the room's `answerKey` (published only at results). **Create another quiz** only, no Retry.
+- **Names (live):** first names; players who share one get a last initial ("Rowel T.") or, if that clashes too, a number ("Rowel 2"). Only the label is stored.
 - **Solo:** no leaderboard.
 - **Buttons:** **Create another quiz** (→ Home), Retry (solo; replays the same quiz from memory, no new AI generation). Share results is P2.
 
@@ -122,9 +124,9 @@ The quiz-taker would see the answers. Quality control instead comes from: Zod sc
 |---|---|---|
 | `books` | ownerId, title, fileId, pageCount, outline[] (title + startPage) | owner read/write |
 | `quizzes` | ownerId, bookId, chapterTitle, pageStart, pageEnd, sourceText, questions[] (incl. answers) | server writes; answers/`sourceText` never sent to players before grading |
-| `rooms` (P1) | code, quizId, hostId, status (lobby/question/results), currentIndex, questionEndsAt, title, questions[] (**answer-stripped**: prompt, choices, page), playerIds[], players[] (userId + first name) | readable only by the host and joined players; created only by `hostRoom`; **host only** changes status and index |
+| `rooms` (P1) | code, quizId, hostId, status (lobby/question/results), currentIndex, title, bookTitle, questions[] (**answer-stripped**: prompt, choices, page), playerIds[], players[] (userId + display label), answered (who answered the current question, ids only), leaderboard[], answerKey (null until results) | readable only by the host and joined players; **read-only for every client**: created by `hostRoom`, players added by `joinRoom`, game moved by `advanceRoom` (**host only**, checked in the action) |
 | `players` (P1) | roomId, userId, displayName (first name only) | written only by `hostRoom` / `joinRoom` with the caller's own id (a user adds only themselves); each user reads only their own rows |
-| `answers` (P1, live rooms only) | roomId, userId, questionIndex, response, isCorrect, score, feedback | written by a server action (`submitAnswer`); **server only** writes isCorrect, score, feedback |
+| `answers` (P1, live rooms only) | roomId, userId, questionIndex, response, graded, isCorrect, score, feedback, page (unique per room + user + question) | created by `submitAnswer` with the caller's own id; graded only by `advanceRoom` and the grading job; no client can create, change or delete; each player reads only their own rows |
 
 - **Players get questions from the room, not the quiz.** `hostRoom` copies the answer-stripped questions onto the room; `quizzes` stays unreadable by every client.
 - **No answer leaks during a question (step 2).** While `status` is `question`, players see only counts ("3/4 answered"), never other players' `response` / `isCorrect`. Responses and results become visible once the question closes, for the leaderboard.
@@ -153,7 +155,7 @@ The quiz-taker would see the answers. Quality control instead comes from: Zod sc
 2. **File storage**: keeps PDFs, so you don't re-upload
 3. **Records + permissions**: persistence, plus "only the host controls the game" and "you can't write your own grade"
 4. **AI (worker, via DeepSpace proxy)**: quiz generation and short-answer grading; no API keys in the app, billed to the app owner
-5. **Real-time rooms + presence** (P1): lobby, synced questions, live player progress, live leaderboard
+5. **Real-time rooms + presence** (P1): lobby, synced questions, live answered count, live leaderboard. **Background jobs** (P1): short-answer grading for live rooms
 
 ## Deliberately left out (say why in the writeup)
 - **Quiz review/edit step.** The quiz-taker is usually the creator, so reviewing would reveal the answers. Quality comes from schema validation, source pages, and code-graded multiple choice instead.

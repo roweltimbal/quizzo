@@ -44,6 +44,8 @@ export const hostRoom: ActionHandler<Env> = async ({ userId, params, tools }) =>
   const title =
     quiz.chapterTitle || (quiz.pageStart === quiz.pageEnd ? `p. ${quiz.pageStart}` : `pp. ${quiz.pageStart}–${quiz.pageEnd}`)
   const displayName = await displayNameFor(tools, userId)
+  const book = await tools.get<Record<string, unknown>>('books', quiz.bookId)
+  const bookTitle = book.success ? String(book.data.record?.data?.title ?? '') : ''
 
   const room: Room = {
     code,
@@ -52,9 +54,13 @@ export const hostRoom: ActionHandler<Env> = async ({ userId, params, tools }) =>
     status: 'lobby',
     currentIndex: 0,
     title,
+    bookTitle,
     questions: toPublicQuestions(quiz.questions),
     playerIds: [userId],
     players: [{ userId, displayName }],
+    answered: { index: 0, userIds: [] },
+    leaderboard: [],
+    answerKey: null,
   }
   const created = await tools.create('rooms', room as unknown as Record<string, unknown>)
   if (!created.success) {
