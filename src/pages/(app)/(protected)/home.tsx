@@ -6,12 +6,14 @@
  * the `where` just states the intent.
  *
  * "Join room" opens /join (Screen 9) to enter a live room's code.
+ * Each card has a "⋯" menu with "Delete book" (BookMenu).
  */
 
 import { Link } from 'react-router-dom'
 import { useAuth, useQuery } from 'deepspace'
 import type { Book } from '../../../schemas/books-schema'
 import { bookTints, card, primaryButton, secondaryButton } from '../../../lib/styles'
+import { BookMenu } from '../../../components/BookMenu'
 
 export default function HomePage() {
   const { userId } = useAuth()
@@ -55,16 +57,20 @@ export default function HomePage() {
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {records.map((book, i) => (
-              <li key={book.recordId}>
+              <li key={book.recordId} className="relative">
                 <Link
                   to={`/books/${book.recordId}`}
-                  className={`${bookTints[i % bookTints.length]} focus-ring block rounded-lg p-4 shadow-card`}
+                  className={`${bookTints[i % bookTints.length]} focus-ring block rounded-lg p-4 pr-14 shadow-card`}
                 >
                   <p className="text-heading text-ink">{book.data.title}</p>
                   <p className="mt-1 text-caption text-ink-muted">
                     {book.data.pageCount} {book.data.pageCount === 1 ? 'page' : 'pages'}
                   </p>
                 </Link>
+                {/* A sibling of the link, so the menu never opens the book. */}
+                <div className="absolute right-2 top-2">
+                  <BookMenu bookId={book.recordId} title={book.data.title} fileId={book.data.fileId} />
+                </div>
               </li>
             ))}
           </ul>

@@ -9,6 +9,9 @@ const pillButton =
 /** The one main action on a screen. */
 export const primaryButton = `${pillButton} bg-brand text-on-brand hover:bg-brand-strong active:bg-brand-strong`
 
+/** Destructive confirm (e.g. Delete in a confirm dialog). `error` fill, white text (contrast ~6:1). */
+export const dangerButton = `${pillButton} bg-error text-on-brand hover:bg-error/90`
+
 /** Any other button. */
 export const secondaryButton = `${pillButton} bg-brand-soft text-brand-strong`
 
